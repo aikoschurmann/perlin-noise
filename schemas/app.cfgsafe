@@ -1,6 +1,10 @@
 schema AppConfig {
-    section Window {
+    section window {
         title: string { default: "Perlin Noise Map" }
+
+        vsync: bool {default: true}
+        target_fps: int { default: 60, min: 0, max: 1000 }
+
         width: int {
             default: 1024, 
             min: 320, 

@@ -34,14 +34,16 @@ static inline void cfg_set_error(cfg_error_t *err, const char *msg, const char *
 
 typedef struct AppConfig_t AppConfig_t;
 
-typedef struct Window_t {
+typedef struct window_t {
     const char* title;
+    bool vsync;
+    int64_t target_fps;
     int64_t width;
     int64_t height;
-} Window_t;
+} window_t;
 
 struct AppConfig_t {
-    Window_t Window;
+    window_t window;
     void* internal_pool;
 };
 
@@ -50,7 +52,7 @@ void AppConfig_parse_cli(AppConfig_t *cfg, int argc, const char **argv);
 void AppConfig_print(const AppConfig_t *cfg, FILE *f);
 void AppConfig_free(AppConfig_t *cfg);
 bool AppConfig_validate(const AppConfig_t *cfg, cfg_error_t *err);
-bool Window_validate(const Window_t *cfg, cfg_error_t *err);
+bool window_validate(const window_t *cfg, cfg_error_t *err);
 
 #ifdef __cplusplus
 }
@@ -235,13 +237,15 @@ static cfg_status_t cfg_parse_ini(const char *filename, cfg_ini_cb cb, void *use
 bool AppConfig_validate(const AppConfig_t *cfg, cfg_error_t *err) {
     if (!cfg) return false;
     (void)err;
-    if (!Window_validate(&cfg->Window, err)) return false;
+    if (!window_validate(&cfg->window, err)) return false;
     return true;
 }
 
-bool Window_validate(const Window_t *cfg, cfg_error_t *err) {
+bool window_validate(const window_t *cfg, cfg_error_t *err) {
     if (!cfg) return false;
     (void)err;
+    if (cfg->target_fps < 0) { cfg_set_error(err, "value too small", "target_fps", 0); return false; }
+    if (cfg->target_fps > 1000) { cfg_set_error(err, "value too large", "target_fps", 0); return false; }
     if (cfg->width < 320) { cfg_set_error(err, "value too small", "width", 0); return false; }
     if (cfg->width > 3840) { cfg_set_error(err, "value too large", "width", 0); return false; }
     if (cfg->height < 240) { cfg_set_error(err, "value too small", "height", 0); return false; }
@@ -253,13 +257,17 @@ void AppConfig_print(const AppConfig_t *cfg, FILE *f) {
     if (!cfg) return;
     if (!f) f = stdout;
     fprintf(f, "--- AppConfig Configuration ---\n");
-    fprintf(f, "%*s[Window]\n", 0, "");
+    fprintf(f, "%*s[window]\n", 0, "");
     fprintf(f, "%*stitle = ", 2, "");
-    fprintf(f, "\"%s\"\n", cfg->Window.title ? cfg->Window.title : "null");
+    fprintf(f, "\"%s\"\n", cfg->window.title ? cfg->window.title : "null");
+    fprintf(f, "%*svsync = ", 2, "");
+    fprintf(f, "%s\n", cfg->window.vsync ? "true" : "false");
+    fprintf(f, "%*starget_fps = ", 2, "");
+    fprintf(f, "%lld\n", (long long)cfg->window.target_fps);
     fprintf(f, "%*swidth = ", 2, "");
-    fprintf(f, "%lld\n", (long long)cfg->Window.width);
+    fprintf(f, "%lld\n", (long long)cfg->window.width);
     fprintf(f, "%*sheight = ", 2, "");
-    fprintf(f, "%lld\n", (long long)cfg->Window.height);
+    fprintf(f, "%lld\n", (long long)cfg->window.height);
     fprintf(f, "--------------------------\n");
 }
 
@@ -267,18 +275,26 @@ static void AppConfig_ini_handler_recursive(cfg_common_context_t *ctx, const cha
     (void)parts; (void)depth;
     if (num_parts == 0) {
     }
-    if (0 < num_parts && strcmp(parts[0], "Window") == 0) {
+    if (0 < num_parts && strcmp(parts[0], "window") == 0) {
         if (num_parts == 1) {
             if (strcmp(key, "title") == 0) {
-                ((AppConfig_t*)ctx->cfg)->Window.title = cfg_intern_string(ctx, val);
+                ((AppConfig_t*)ctx->cfg)->window.title = cfg_intern_string(ctx, val);
+                return;
+            }
+            if (strcmp(key, "vsync") == 0) {
+                ((AppConfig_t*)ctx->cfg)->window.vsync = (strcmp(val, "true") == 0 || strcmp(val, "1") == 0);
+                return;
+            }
+            if (strcmp(key, "target_fps") == 0) {
+                ((AppConfig_t*)ctx->cfg)->window.target_fps = strtoll(val, NULL, 10);
                 return;
             }
             if (strcmp(key, "width") == 0) {
-                ((AppConfig_t*)ctx->cfg)->Window.width = strtoll(val, NULL, 10);
+                ((AppConfig_t*)ctx->cfg)->window.width = strtoll(val, NULL, 10);
                 return;
             }
             if (strcmp(key, "height") == 0) {
-                ((AppConfig_t*)ctx->cfg)->Window.height = strtoll(val, NULL, 10);
+                ((AppConfig_t*)ctx->cfg)->window.height = strtoll(val, NULL, 10);
                 return;
             }
         }
@@ -288,40 +304,55 @@ static void AppConfig_ini_handler_recursive(cfg_common_context_t *ctx, const cha
 static bool AppConfig_parse_arg(cfg_common_context_t *ctx, int argc, const char **argv, int *index) {
     int i = *index;
     const char *arg = argv[i];
-    if (strcmp(arg, "--AppConfig.Window.title") == 0) {
+    if (strcmp(arg, "--AppConfig.window.title") == 0) {
         if (i + 1 < argc) {
             const char *val = argv[++i];
-            ((AppConfig_t*)ctx->cfg)->Window.title = cfg_intern_string(ctx, val);
+            ((AppConfig_t*)ctx->cfg)->window.title = cfg_intern_string(ctx, val);
             *index = i; return true;
         }
     }
-    if (strncmp(arg, "--AppConfig.Window.title=", 25) == 0) {
+    if (strncmp(arg, "--AppConfig.window.title=", 25) == 0) {
         const char *val = arg + 25;
-        ((AppConfig_t*)ctx->cfg)->Window.title = cfg_intern_string(ctx, val);
+        ((AppConfig_t*)ctx->cfg)->window.title = cfg_intern_string(ctx, val);
         return true;
     }
-    if (strcmp(arg, "--AppConfig.Window.width") == 0) {
+    if (strcmp(arg, "--AppConfig.window.vsync") == 0) {
+        ((AppConfig_t*)ctx->cfg)->window.vsync = true; return true;
+    }
+    if (strcmp(arg, "--AppConfig.window.target_fps") == 0) {
         if (i + 1 < argc) {
             const char *val = argv[++i];
-            ((AppConfig_t*)ctx->cfg)->Window.width = strtoll(val, NULL, 10);
+            ((AppConfig_t*)ctx->cfg)->window.target_fps = strtoll(val, NULL, 10);
             *index = i; return true;
         }
     }
-    if (strncmp(arg, "--AppConfig.Window.width=", 25) == 0) {
-        const char *val = arg + 25;
-        ((AppConfig_t*)ctx->cfg)->Window.width = strtoll(val, NULL, 10);
+    if (strncmp(arg, "--AppConfig.window.target_fps=", 30) == 0) {
+        const char *val = arg + 30;
+        ((AppConfig_t*)ctx->cfg)->window.target_fps = strtoll(val, NULL, 10);
         return true;
     }
-    if (strcmp(arg, "--AppConfig.Window.height") == 0) {
+    if (strcmp(arg, "--AppConfig.window.width") == 0) {
         if (i + 1 < argc) {
             const char *val = argv[++i];
-            ((AppConfig_t*)ctx->cfg)->Window.height = strtoll(val, NULL, 10);
+            ((AppConfig_t*)ctx->cfg)->window.width = strtoll(val, NULL, 10);
             *index = i; return true;
         }
     }
-    if (strncmp(arg, "--AppConfig.Window.height=", 26) == 0) {
+    if (strncmp(arg, "--AppConfig.window.width=", 25) == 0) {
+        const char *val = arg + 25;
+        ((AppConfig_t*)ctx->cfg)->window.width = strtoll(val, NULL, 10);
+        return true;
+    }
+    if (strcmp(arg, "--AppConfig.window.height") == 0) {
+        if (i + 1 < argc) {
+            const char *val = argv[++i];
+            ((AppConfig_t*)ctx->cfg)->window.height = strtoll(val, NULL, 10);
+            *index = i; return true;
+        }
+    }
+    if (strncmp(arg, "--AppConfig.window.height=", 26) == 0) {
         const char *val = arg + 26;
-        ((AppConfig_t*)ctx->cfg)->Window.height = strtoll(val, NULL, 10);
+        ((AppConfig_t*)ctx->cfg)->window.height = strtoll(val, NULL, 10);
         return true;
     }
     *index = i;
@@ -360,9 +391,11 @@ cfg_status_t AppConfig_load(AppConfig_t *cfg, const char *filename, int argc, co
     memset(cfg, 0, sizeof(AppConfig_t));
     cfg_common_context_t ctx = { cfg, NULL };
     if (err) memset(err, 0, sizeof(cfg_error_t));
-    cfg->Window.title = cfg_intern_string(&ctx, "Perlin Noise Map");
-    cfg->Window.width = 1024;
-    cfg->Window.height = 768;
+    cfg->window.title = cfg_intern_string(&ctx, "Perlin Noise Map");
+    cfg->window.vsync = true;
+    cfg->window.target_fps = 60;
+    cfg->window.width = 1024;
+    cfg->window.height = 768;
     if (filename) {
         cfg_status_t status = cfg_parse_ini(filename, AppConfig_ini_handler, &ctx, err);
         if (status != CFG_SUCCESS) { cfg_pool_free(ctx.pool); return status; }

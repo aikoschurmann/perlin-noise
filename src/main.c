@@ -12,59 +12,109 @@
 #pragma GCC diagnostic pop
 #endif
 
-int main(int argc, const char** argv) {
-    AppConfig_t app_cfg = {0};
+#include <stdbool.h>
+
+static bool load_application_config(AppConfig_t* out_config, int argc, const char** argv) {
     cfg_error_t err = {0};
-    if (AppConfig_load(&app_cfg, NULL, argc, argv, &err) != 0) return 1;
-    
+    if (AppConfig_load(out_config, NULL, argc, argv, &err) != 0) {
+        printf("Configuration failed to load.\n");
+        return false;
+    }
+    return true;
+}
+
+static bool initialize_graphics(const AppConfig_t* config, SDL_Window** out_window, SDL_Renderer** out_renderer) {
     if (SDL_Init(SDL_INIT_VIDEO) < 0) {
         printf("SDL could not initialize! SDL_Error: %s\n", SDL_GetError());
-        return 1;
+        return false;
     }
     
-    printf("Creating window: %dx%d\n", (int)app_cfg.Window.width, (int)app_cfg.Window.height);
+    printf("Creating window: %dx%d\n", (int)config->window.width, (int)config->window.height);
     
-    SDL_Window *window = SDL_CreateWindow(
-	    app_cfg.Window.title,
-	    SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED,
-	    app_cfg.Window.width, app_cfg.Window.height,
-	    SDL_WINDOW_SHOWN
-	);
-	
-    SDL_Renderer *renderer = SDL_CreateRenderer(window, -1, SDL_RENDERER_ACCELERATED | SDL_RENDERER_PRESENTVSYNC);
-    if (!renderer) {
+    *out_window = SDL_CreateWindow(
+        config->window.title,
+        SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED,
+        config->window.width, config->window.height,
+        SDL_WINDOW_SHOWN
+    );
+    
+    if (!*out_window) {
+        printf("Window could not be created! SDL_Error: %s\n", SDL_GetError());
+        return false;
+    }
+
+    SDL_RendererFlags render_flags = SDL_RENDERER_ACCELERATED;
+    if (config->window.vsync) {
+        render_flags |= SDL_RENDERER_PRESENTVSYNC;
+    }
+    
+    *out_renderer = SDL_CreateRenderer(*out_window, -1, render_flags);
+    if (!*out_renderer) {
         printf("Renderer could not be created! SDL_Error: %s\n", SDL_GetError());
+        return false;
     }
     
-    int quit = 0;
-    SDL_Event e;
+    return true;
+}
+
+static void render_frame(SDL_Renderer* renderer) {
+    SDL_SetRenderDrawColor(renderer, 30, 30, 30, 255); // Dark grey background
+    SDL_RenderClear(renderer);
     
-    // Main application loop
-    while (!quit) {
-        // Handle events
-        while (SDL_PollEvent(&e) != 0) {
-            if (e.type == SDL_QUIT) {
-                quit = 1;
+    // TODO: Perlin noise texture rendering will go here
+    
+    SDL_RenderPresent(renderer); 
+}
+
+static void run_main_loop(const AppConfig_t* config, SDL_Renderer* renderer) {
+    int is_running = 1;
+    SDL_Event event;
+    
+    while (is_running) {
+        Uint32 frame_start = SDL_GetTicks();
+        
+        while (SDL_PollEvent(&event) != 0) {
+            if (event.type == SDL_QUIT) {
+                is_running = 0;
             }
         }
         
-        // Render
-        if (renderer) {
-            SDL_SetRenderDrawColor(renderer, 30, 30, 30, 255); // Dark grey background
-            SDL_RenderClear(renderer);
+        render_frame(renderer);
+        
+        // If VSync is off, cap the framerate to target_fps
+        if (!config->window.vsync && config->window.target_fps > 0) {
+            Uint32 frame_time = SDL_GetTicks() - frame_start;
+            Uint32 target_delay = 1000 / config->window.target_fps;
             
-            // TODO: Perlin noise texture rendering will go here
-            
-            SDL_RenderPresent(renderer); // VSync automatically caps framerate (no manual delays needed)
+            if (frame_time < target_delay) {
+                SDL_Delay(target_delay - frame_time);
+            }
         }
     }
-    
-    if (renderer) {
-        SDL_DestroyRenderer(renderer);
-    }
-    SDL_DestroyWindow(window);
-    SDL_Quit();
+}
 
-    AppConfig_free(&app_cfg);
+static void shutdown_application(AppConfig_t* config, SDL_Window* window, SDL_Renderer* renderer) {
+    if (renderer) SDL_DestroyRenderer(renderer);
+    if (window) SDL_DestroyWindow(window);
+    SDL_Quit();
+    AppConfig_free(config);
+}
+
+int main(int argc, const char** argv) {
+    AppConfig_t config = {0};
+    if (!load_application_config(&config, argc, argv)) {
+        return 1;
+    }
+    
+    SDL_Window* window = NULL;
+    SDL_Renderer* renderer = NULL;
+    if (!initialize_graphics(&config, &window, &renderer)) {
+        shutdown_application(&config, window, renderer);
+        return 1;
+    }
+    
+    run_main_loop(&config, renderer);
+    
+    shutdown_application(&config, window, renderer);
     return 0;
 }
