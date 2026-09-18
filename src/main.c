@@ -66,17 +66,28 @@ static void render_frame(SDL_Renderer* renderer) {
     SDL_RenderPresent(renderer); 
 }
 
+#include "input.h"
+
 static void run_main_loop(const AppConfig_t* config, SDL_Renderer* renderer) {
     int is_running = 1;
     SDL_Event event;
     
+    Input_Initialize();
+    
     while (is_running) {
         Uint32 frame_start = SDL_GetTicks();
+        
+        Input_Update(); // Cycle the key states for the new frame
         
         while (SDL_PollEvent(&event) != 0) {
             if (event.type == SDL_QUIT) {
                 is_running = 0;
             }
+        }
+        
+        // Handle Input State (Universal)
+        if (Input_IsKeyPressed(SDL_SCANCODE_ESCAPE)) {
+            is_running = 0;
         }
         
         render_frame(renderer);
