@@ -17,7 +17,7 @@ int main(int argc, const char** argv) {
     cfg_error_t err = {0};
     if (AppConfig_load(&app_cfg, NULL, argc, argv, &err) != 0) return 1;
     printf("Hello from %s! Port %d\n", app_cfg.name, (int)app_cfg.port);
-    printf("test2");
+    printf("test3");
 
     if (SDL_Init(SDL_INIT_VIDEO) < 0) {
         printf("SDL could not initialize! SDL_Error: %s\n", SDL_GetError());
