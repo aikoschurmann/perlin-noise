@@ -1,0 +1,5 @@
+schema AppConfig {
+    port: int { default: 8080 }
+    debug: bool { default: false }
+    name: string { default: "perlin-noise" }
+}
