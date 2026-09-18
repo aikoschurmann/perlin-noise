@@ -34,10 +34,14 @@ static inline void cfg_set_error(cfg_error_t *err, const char *msg, const char *
 
 typedef struct AppConfig_t AppConfig_t;
 
+typedef struct Window_t {
+    const char* title;
+    int64_t width;
+    int64_t height;
+} Window_t;
+
 struct AppConfig_t {
-    int64_t port;
-    bool debug;
-    const char* name;
+    Window_t Window;
     void* internal_pool;
 };
 
@@ -46,6 +50,7 @@ void AppConfig_parse_cli(AppConfig_t *cfg, int argc, const char **argv);
 void AppConfig_print(const AppConfig_t *cfg, FILE *f);
 void AppConfig_free(AppConfig_t *cfg);
 bool AppConfig_validate(const AppConfig_t *cfg, cfg_error_t *err);
+bool Window_validate(const Window_t *cfg, cfg_error_t *err);
 
 #ifdef __cplusplus
 }
@@ -230,6 +235,17 @@ static cfg_status_t cfg_parse_ini(const char *filename, cfg_ini_cb cb, void *use
 bool AppConfig_validate(const AppConfig_t *cfg, cfg_error_t *err) {
     if (!cfg) return false;
     (void)err;
+    if (!Window_validate(&cfg->Window, err)) return false;
+    return true;
+}
+
+bool Window_validate(const Window_t *cfg, cfg_error_t *err) {
+    if (!cfg) return false;
+    (void)err;
+    if (cfg->width < 320) { cfg_set_error(err, "value too small", "width", 0); return false; }
+    if (cfg->width > 3840) { cfg_set_error(err, "value too large", "width", 0); return false; }
+    if (cfg->height < 240) { cfg_set_error(err, "value too small", "height", 0); return false; }
+    if (cfg->height > 2160) { cfg_set_error(err, "value too large", "height", 0); return false; }
     return true;
 }
 
@@ -237,29 +253,34 @@ void AppConfig_print(const AppConfig_t *cfg, FILE *f) {
     if (!cfg) return;
     if (!f) f = stdout;
     fprintf(f, "--- AppConfig Configuration ---\n");
-    fprintf(f, "%*sport = ", 0, "");
-    fprintf(f, "%lld\n", (long long)cfg->port);
-    fprintf(f, "%*sdebug = ", 0, "");
-    fprintf(f, "%s\n", cfg->debug ? "true" : "false");
-    fprintf(f, "%*sname = ", 0, "");
-    fprintf(f, "\"%s\"\n", cfg->name ? cfg->name : "null");
+    fprintf(f, "%*s[Window]\n", 0, "");
+    fprintf(f, "%*stitle = ", 2, "");
+    fprintf(f, "\"%s\"\n", cfg->Window.title ? cfg->Window.title : "null");
+    fprintf(f, "%*swidth = ", 2, "");
+    fprintf(f, "%lld\n", (long long)cfg->Window.width);
+    fprintf(f, "%*sheight = ", 2, "");
+    fprintf(f, "%lld\n", (long long)cfg->Window.height);
     fprintf(f, "--------------------------\n");
 }
 
 static void AppConfig_ini_handler_recursive(cfg_common_context_t *ctx, const char *key, const char *val, char **parts, int num_parts, int depth) {
     (void)parts; (void)depth;
     if (num_parts == 0) {
-        if (strcmp(key, "port") == 0) {
-            ((AppConfig_t*)ctx->cfg)->port = strtoll(val, NULL, 10);
-            return;
-        }
-        if (strcmp(key, "debug") == 0) {
-            ((AppConfig_t*)ctx->cfg)->debug = (strcmp(val, "true") == 0 || strcmp(val, "1") == 0);
-            return;
-        }
-        if (strcmp(key, "name") == 0) {
-            ((AppConfig_t*)ctx->cfg)->name = cfg_intern_string(ctx, val);
-            return;
+    }
+    if (0 < num_parts && strcmp(parts[0], "Window") == 0) {
+        if (num_parts == 1) {
+            if (strcmp(key, "title") == 0) {
+                ((AppConfig_t*)ctx->cfg)->Window.title = cfg_intern_string(ctx, val);
+                return;
+            }
+            if (strcmp(key, "width") == 0) {
+                ((AppConfig_t*)ctx->cfg)->Window.width = strtoll(val, NULL, 10);
+                return;
+            }
+            if (strcmp(key, "height") == 0) {
+                ((AppConfig_t*)ctx->cfg)->Window.height = strtoll(val, NULL, 10);
+                return;
+            }
         }
     }
 }
@@ -267,31 +288,40 @@ static void AppConfig_ini_handler_recursive(cfg_common_context_t *ctx, const cha
 static bool AppConfig_parse_arg(cfg_common_context_t *ctx, int argc, const char **argv, int *index) {
     int i = *index;
     const char *arg = argv[i];
-    if (strcmp(arg, "--AppConfig.port") == 0) {
+    if (strcmp(arg, "--AppConfig.Window.title") == 0) {
         if (i + 1 < argc) {
             const char *val = argv[++i];
-            ((AppConfig_t*)ctx->cfg)->port = strtoll(val, NULL, 10);
+            ((AppConfig_t*)ctx->cfg)->Window.title = cfg_intern_string(ctx, val);
             *index = i; return true;
         }
     }
-    if (strncmp(arg, "--AppConfig.port=", 17) == 0) {
-        const char *val = arg + 17;
-        ((AppConfig_t*)ctx->cfg)->port = strtoll(val, NULL, 10);
+    if (strncmp(arg, "--AppConfig.Window.title=", 25) == 0) {
+        const char *val = arg + 25;
+        ((AppConfig_t*)ctx->cfg)->Window.title = cfg_intern_string(ctx, val);
         return true;
     }
-    if (strcmp(arg, "--AppConfig.debug") == 0) {
-        ((AppConfig_t*)ctx->cfg)->debug = true; return true;
-    }
-    if (strcmp(arg, "--AppConfig.name") == 0) {
+    if (strcmp(arg, "--AppConfig.Window.width") == 0) {
         if (i + 1 < argc) {
             const char *val = argv[++i];
-            ((AppConfig_t*)ctx->cfg)->name = cfg_intern_string(ctx, val);
+            ((AppConfig_t*)ctx->cfg)->Window.width = strtoll(val, NULL, 10);
             *index = i; return true;
         }
     }
-    if (strncmp(arg, "--AppConfig.name=", 17) == 0) {
-        const char *val = arg + 17;
-        ((AppConfig_t*)ctx->cfg)->name = cfg_intern_string(ctx, val);
+    if (strncmp(arg, "--AppConfig.Window.width=", 25) == 0) {
+        const char *val = arg + 25;
+        ((AppConfig_t*)ctx->cfg)->Window.width = strtoll(val, NULL, 10);
+        return true;
+    }
+    if (strcmp(arg, "--AppConfig.Window.height") == 0) {
+        if (i + 1 < argc) {
+            const char *val = argv[++i];
+            ((AppConfig_t*)ctx->cfg)->Window.height = strtoll(val, NULL, 10);
+            *index = i; return true;
+        }
+    }
+    if (strncmp(arg, "--AppConfig.Window.height=", 26) == 0) {
+        const char *val = arg + 26;
+        ((AppConfig_t*)ctx->cfg)->Window.height = strtoll(val, NULL, 10);
         return true;
     }
     *index = i;
@@ -330,9 +360,9 @@ cfg_status_t AppConfig_load(AppConfig_t *cfg, const char *filename, int argc, co
     memset(cfg, 0, sizeof(AppConfig_t));
     cfg_common_context_t ctx = { cfg, NULL };
     if (err) memset(err, 0, sizeof(cfg_error_t));
-    cfg->port = 8080;
-    cfg->debug = false;
-    cfg->name = cfg_intern_string(&ctx, "perlin-noise");
+    cfg->Window.title = cfg_intern_string(&ctx, "Perlin Noise Map");
+    cfg->Window.width = 1024;
+    cfg->Window.height = 768;
     if (filename) {
         cfg_status_t status = cfg_parse_ini(filename, AppConfig_ini_handler, &ctx, err);
         if (status != CFG_SUCCESS) { cfg_pool_free(ctx.pool); return status; }

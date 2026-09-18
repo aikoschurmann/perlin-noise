@@ -1,5 +1,15 @@
 schema AppConfig {
-    port: int { default: 8080 }
-    debug: bool { default: false }
-    name: string { default: "perlin-noise" }
+    section Window {
+        title: string { default: "Perlin Noise Map" }
+        width: int {
+            default: 1024, 
+            min: 320, 
+            max: 3840
+        }
+        height: int {
+            default: 768, 
+            min: 240, 
+            max: 2160
+        }
+    }
 }
