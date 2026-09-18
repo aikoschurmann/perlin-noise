@@ -9,7 +9,7 @@ target_include_directories(${PROJECT_NAME}_core PUBLIC include)
 target_sources(${PROJECT_NAME}_core PRIVATE src/core.c)
 
 add_executable(${PROJECT_NAME})
-target_sources(${PROJECT_NAME} PRIVATE src/main.c src/input.c)
+target_sources(${PROJECT_NAME} PRIVATE src/main.c src/app.c src/graphics.c src/input.c)
 target_link_libraries(${PROJECT_NAME} PRIVATE ${PROJECT_NAME}_core)
 
 find_program(CLANG_TIDY_EXE NAMES "clang-tidy")
